@@ -163,7 +163,7 @@ sub iptables_generate {
     $self->generate_interception_rules(\$tags{'nat_if_src_to_chain'},\$tags{'nat_prerouting_vlan'},\$tags{'input_inter_vlan_if'} );
 
     # OAuth
-    my $passthrough_enabled = isenabled($Config{'trapping'}{'passthrough'});
+    my $passthrough_enabled = isenabled($Config{'fencing'}{'passthrough'});
 
     if ($passthrough_enabled) {
         generate_passthrough_rules(
@@ -199,7 +199,7 @@ sub generate_filter_if_src_to_chain {
     my $logger = get_logger();
     my $rules = '';
 
-    my $passthrough_enabled = isenabled($Config{'trapping'}{'passthrough'});
+    my $passthrough_enabled = isenabled($Config{'fencing'}{'passthrough'});
 
     # internal interfaces handling
     foreach my $interface (@internal_nets) {
@@ -324,9 +324,9 @@ sub generate_inline_rules {
             . "--jump DNAT --to $gateway\n";
         $$nat_prerouting_ref .= "-A $FW_PREROUTING_INT_INLINE $rule --match mark --mark 0x$IPTABLES_MARK_ISOLATION "
             . "--jump DNAT --to $gateway\n";
-        if (defined($Config{'trapping'}{'interception_proxy_port'}) && isenabled($Config{'trapping'}{'interception_proxy'})) {
+        if (defined($Config{'fencing'}{'interception_proxy_port'}) && isenabled($Config{'fencing'}{'interception_proxy'})) {
             $logger->info("Adding Proxy interception rules");
-            foreach my $intercept_port ( split(',', $Config{'trapping'}{'interception_proxy_port'} ) ) {
+            foreach my $intercept_port ( split(',', $Config{'fencing'}{'interception_proxy_port'} ) ) {
                 my $rule = "--protocol tcp --destination-port $intercept_port -s $network/$ConfigNetworks{$network}{'netmask'}";
                 $$nat_prerouting_ref .= "-A $FW_PREROUTING_INT_INLINE $rule --match mark --mark 0x$IPTABLES_MARK_UNREG "
                         . "--jump DNAT --to $gateway\n";
@@ -336,9 +336,9 @@ sub generate_inline_rules {
         }
     }
 
-    if (defined($Config{'trapping'}{'interception_proxy_port'}) && isenabled($Config{'trapping'}{'interception_proxy'})) {
+    if (defined($Config{'fencing'}{'interception_proxy_port'}) && isenabled($Config{'fencing'}{'interception_proxy'})) {
         $logger->info("Adding Proxy interception rules");
-        foreach my $intercept_port ( split(',', $Config{'trapping'}{'interception_proxy_port'} ) ) {
+        foreach my $intercept_port ( split(',', $Config{'fencing'}{'interception_proxy_port'} ) ) {
             $$input_filtering_ref .= "-A $FW_FILTER_INPUT_INT_INLINE --protocol tcp --match tcp --dport $intercept_port "
                     . " --match mark --mark 0x$IPTABLES_MARK_UNREG  --jump ACCEPT\n";
             $$input_filtering_ref .= "-A $FW_FILTER_INPUT_INT_INLINE --protocol tcp --match tcp --dport $intercept_port "
@@ -356,7 +356,7 @@ sub generate_inline_rules {
     $$routed_postrouting_inline .= "-A $FW_POSTROUTING_INT_INLINE_ROUTED --jump ACCEPT\n";
 
     $logger->info("building firewall to accept registered users through inline interface");
-    my $passthrough_enabled = isenabled($Config{'trapping'}{'passthrough'});
+    my $passthrough_enabled = isenabled($Config{'fencing'}{'passthrough'});
 
     if ($passthrough_enabled) {
         $$filter_rules_ref .= "-A $FW_FILTER_FORWARD_INT_INLINE --match mark --mark 0x$IPTABLES_MARK_UNREG -m set --match-set pfsession_passthrough dst,dst --jump ACCEPT\n";
@@ -364,7 +364,7 @@ sub generate_inline_rules {
 
 
     $$filter_rules_ref .= "-A $FW_FILTER_FORWARD_INT_INLINE --match mark --mark 0x$IPTABLES_MARK_REG --jump ACCEPT\n";
-    if (!isenabled($Config{'trapping'}{'registration'})) {
+    if (!isenabled($Config{'fencing'}{'registration'})) {
         $logger->info(
             "trapping.registration is disabled, adding rule so we accept unregistered users through inline interface"
         );
@@ -514,7 +514,7 @@ sub generate_nat_redirect_rules {
     my $rules = '';
 
     # Exclude the OAuth from the DNAT
-    my $passthrough_enabled = isenabled($Config{'trapping'}{'passthrough'});
+    my $passthrough_enabled = isenabled($Config{'fencing'}{'passthrough'});
 
     if ($passthrough_enabled) {
          $rules .= "-A $FW_PREROUTING_INT_INLINE -m set --match-set pfsession_passthrough dst,dst ".
@@ -540,7 +540,7 @@ sub generate_nat_redirect_rules {
                 }
             }
             # Destination NAT to the portal on the UNREG mark if trapping.registration is enabled
-            if ( isenabled( $Config{'trapping'}{'registration'} ) ) {
+            if ( isenabled( $Config{'fencing'}{'registration'} ) ) {
                 $rules .=
                     "-A $FW_PREROUTING_INT_INLINE --protocol $protocol --destination-port $port -s $network/$ConfigNetworks{$network}{'netmask'} " .
                     "--match mark --mark 0x$IPTABLES_MARK_UNREG --jump DNAT --to $gateway\n";
@@ -668,7 +668,7 @@ sub generate_interception_rules {
         if ($enforcement_type eq $IF_ENFORCEMENT_VLAN) {
             # send everything from vlan interfaces to the vlan chain
             $$nat_if_src_to_chain .= "-A PREROUTING --in-interface $dev --jump $FW_PREROUTING_INT_VLAN\n";
-            if (defined($Config{'trapping'}{'interception_proxy_port'}) && isenabled($Config{'trapping'}{'interception_proxy'})) {
+            if (defined($Config{'fencing'}{'interception_proxy_port'}) && isenabled($Config{'fencing'}{'interception_proxy'})) {
                 foreach my $network ( keys %ConfigNetworks ) {
                     next if (pf::config::is_network_type_inline($network));
                     my %net = %{$ConfigNetworks{$network}};
@@ -679,7 +679,7 @@ sub generate_interception_rules {
                         $ip = new NetAddr::IP::Lite clean_ip($net{'gateway'});
                     }
                     if ($net_addr->contains($ip)) {
-                        foreach my $intercept_port ( split( ',', $Config{'trapping'}{'interception_proxy_port'} ) ) {
+                        foreach my $intercept_port ( split( ',', $Config{'fencing'}{'interception_proxy_port'} ) ) {
                             my $destination = $Config{"interface $dev"}{'vip'} || $Config{"interface $dev"}{'ip'};
                             my $rule = "--protocol tcp --destination-port $intercept_port -s $network/$ConfigNetworks{$network}{'netmask'}";
                             $$nat_prerouting_vlan .= "-A $FW_PREROUTING_INT_VLAN $rule --jump DNAT --to $destination\n";
@@ -689,8 +689,8 @@ sub generate_interception_rules {
             }
         }
     }
-    if (defined($Config{'trapping'}{'interception_proxy_port'}) && isenabled($Config{'trapping'}{'interception_proxy'})) {
-        foreach my $intercept_port ( split( ',', $Config{'trapping'}{'interception_proxy_port'} ) ) {
+    if (defined($Config{'fencing'}{'interception_proxy_port'}) && isenabled($Config{'fencing'}{'interception_proxy'})) {
+        foreach my $intercept_port ( split( ',', $Config{'fencing'}{'interception_proxy_port'} ) ) {
             my $rule = "--protocol tcp --destination-port $intercept_port";
             $$input_inter_vlan_if .= "-A $FW_FILTER_INPUT_INT_VLAN $rule --jump ACCEPT\n";
         }
